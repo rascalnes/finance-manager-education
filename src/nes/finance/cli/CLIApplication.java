@@ -46,11 +46,17 @@ public class CLIApplication {
                     case "add_expense":
                         handleAddExpense(parts);
                         break;
+                    case "set_budget":
+                        handleSetBudget(parts);
+                        break;
                     case "info":
                         handleInfo();
                         break;
                     case "stats":
                         handleStats();
+                        break;
+                    case "budgets":
+                        handleBudgets();
                         break;
                     case "exit":
                         handleExit();
@@ -124,11 +130,7 @@ public class CLIApplication {
             double amount = Double.parseDouble(parts[1]);
             String category = parts[2];
 
-            if (financialService.addIncome(amount, category)) {
-                System.out.printf("Доход %.2f добавлен в категорию '%s'%n", amount, category);
-            } else {
-                System.out.println("Ошибка: неверная сумма дохода");
-            }
+            financialService.addIncome(amount, category);
         } catch (NumberFormatException e) {
             System.out.println("Ошибка: сумма должна быть числом");
         }
@@ -149,13 +151,30 @@ public class CLIApplication {
             double amount = Double.parseDouble(parts[1]);
             String category = parts[2];
 
-            if (financialService.addExpense(amount, category)) {
-                System.out.printf("Расход %.2f добавлен в категорию '%s'%n", amount, category);
-            } else {
-                System.out.println("Ошибка: неверная сумма расхода или недостаточно средств");
-            }
+            financialService.addExpense(amount, category);
         } catch (NumberFormatException e) {
             System.out.println("Ошибка: сумма должна быть числом");
+        }
+    }
+
+    private void handleSetBudget(String[] parts) {
+        if (!financialService.isAuthenticated()) {
+            System.out.println("Ошибка: необходимо авторизоваться");
+            return;
+        }
+
+        if (parts.length < 3) {
+            System.out.println("Использование: set_budget [категория] [лимит]");
+            return;
+        }
+
+        try {
+            String category = parts[1];
+            double limit = Double.parseDouble(parts[2]);
+
+            financialService.setBudget(category, limit);
+        } catch (NumberFormatException e) {
+            System.out.println("Ошибка: лимит должен быть числом");
         }
     }
 
@@ -172,6 +191,15 @@ public class CLIApplication {
         financialService.showCategoriesSummary();
     }
 
+    private void handleBudgets() {
+        if (!financialService.isAuthenticated()) {
+            System.out.println("Ошибка: необходимо авторизоваться");
+            return;
+        }
+
+        financialService.showBudgetStatus();
+    }
+
     private void handleExit() {
         System.out.println("Выход из приложения...");
         isRunning = false;
@@ -183,8 +211,10 @@ public class CLIApplication {
         System.out.println("  register [логин] [пароль] - регистрация нового пользователя");
         System.out.println("  add_income [сумма] [категория] - добавить доход");
         System.out.println("  add_expense [сумма] [категория] - добавить расход");
+        System.out.println("  set_budget [категория] [лимит] - установить бюджет для категории");
         System.out.println("  info - информация о текущем пользователе и балансе");
-        System.out.println("  stats - статистика по категориям");
+        System.out.println("  stats - статистика по категориям и бюджетам");
+        System.out.println("  budgets - статус бюджетов");
         System.out.println("  exit - выход из приложения");
         System.out.println("  help - показать эту справку");
     }
