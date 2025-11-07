@@ -40,17 +40,26 @@ public class CLIApplication {
                     case "register":
                         handleRegister(parts);
                         break;
-                    case "exit":
-                        handleExit();
+                    case "add_income":
+                        handleAddIncome(parts);
+                        break;
+                    case "add_expense":
+                        handleAddExpense(parts);
                         break;
                     case "info":
                         handleInfo();
+                        break;
+                    case "stats":
+                        handleStats();
+                        break;
+                    case "exit":
+                        handleExit();
                         break;
                     case "help":
                         showHelp();
                         break;
                     default:
-                        System.out.println("Неизвестная команда. Введите 'help' для вывода списка команд.");
+                        System.out.println("Неизвестная команда. Введите 'help' для списка команд.");
                 }
             } catch (Exception e) {
                 System.out.println("Ошибка выполнения команды: " + e.getMessage());
@@ -100,20 +109,82 @@ public class CLIApplication {
         }
     }
 
-    private void handleExit() {
-        System.out.println("Выход из приложения...");
-        isRunning = false;
+    private void handleAddIncome(String[] parts) {
+        if (!financialService.isAuthenticated()) {
+            System.out.println("Ошибка: необходимо авторизоваться");
+            return;
+        }
+
+        if (parts.length < 3) {
+            System.out.println("Использование: add_income [сумма] [категория]");
+            return;
+        }
+
+        try {
+            double amount = Double.parseDouble(parts[1]);
+            String category = parts[2];
+
+            if (financialService.addIncome(amount, category)) {
+                System.out.printf("Доход %.2f добавлен в категорию '%s'%n", amount, category);
+            } else {
+                System.out.println("Ошибка: неверная сумма дохода");
+            }
+        } catch (NumberFormatException e) {
+            System.out.println("Ошибка: сумма должна быть числом");
+        }
+    }
+
+    private void handleAddExpense(String[] parts) {
+        if (!financialService.isAuthenticated()) {
+            System.out.println("Ошибка: необходимо авторизоваться");
+            return;
+        }
+
+        if (parts.length < 3) {
+            System.out.println("Использование: add_expense [сумма] [категория]");
+            return;
+        }
+
+        try {
+            double amount = Double.parseDouble(parts[1]);
+            String category = parts[2];
+
+            if (financialService.addExpense(amount, category)) {
+                System.out.printf("Расход %.2f добавлен в категорию '%s'%n", amount, category);
+            } else {
+                System.out.println("Ошибка: неверная сумма расхода или недостаточно средств");
+            }
+        } catch (NumberFormatException e) {
+            System.out.println("Ошибка: сумма должна быть числом");
+        }
     }
 
     private void handleInfo() {
         financialService.showUserInfo();
     }
 
+    private void handleStats() {
+        if (!financialService.isAuthenticated()) {
+            System.out.println("Ошибка: необходимо авторизоваться");
+            return;
+        }
+
+        financialService.showCategoriesSummary();
+    }
+
+    private void handleExit() {
+        System.out.println("Выход из приложения...");
+        isRunning = false;
+    }
+
     private void showHelp() {
         System.out.println("Доступные команды:");
         System.out.println("  login [логин] [пароль] - вход в систему");
         System.out.println("  register [логин] [пароль] - регистрация нового пользователя");
-        System.out.println("  info - информация о текущем пользователе");
+        System.out.println("  add_income [сумма] [категория] - добавить доход");
+        System.out.println("  add_expense [сумма] [категория] - добавить расход");
+        System.out.println("  info - информация о текущем пользователе и балансе");
+        System.out.println("  stats - статистика по категориям");
         System.out.println("  exit - выход из приложения");
         System.out.println("  help - показать эту справку");
     }

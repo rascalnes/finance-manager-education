@@ -5,7 +5,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class AuthService {
-    private Map<String, User> users; // login -> User
+    private Map<String, User> users;
     private User currentUser;
 
     public AuthService() {

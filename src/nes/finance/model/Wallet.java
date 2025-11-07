@@ -8,7 +8,7 @@ import java.util.Map;
 public class Wallet {
     private double balance;
     private List<Transaction> transactions;
-    private Map<String, Double> budgets; // category -> limit
+    private Map<String, Double> budgets;
 
     public Wallet() {
         this.balance = 0.0;
