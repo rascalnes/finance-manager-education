@@ -11,6 +11,7 @@ public class User {
         this.wallet = new Wallet();
     }
 
+    // Getters and Setters
     public String getLogin() { return login; }
     public String getPassword() { return password; }
     public Wallet getWallet() { return wallet; }

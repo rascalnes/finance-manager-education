@@ -1,5 +1,6 @@
 package nes.finance.cli;
 
+import nes.finance.model.User;
 import nes.finance.service.AuthService;
 import nes.finance.service.FinancialService;
 import java.util.Scanner;
@@ -19,7 +20,7 @@ public class CLIApplication {
 
     public void run() {
         System.out.println("=== Система управления личными финансами ===");
-        showHelp();
+        System.out.println("Доступные команды: login, register, add_income, add_expense, set_budget, info, stats, budgets, calculate, alerts, clear_alerts, exit");
 
         while (isRunning) {
             showPrompt();
@@ -61,6 +62,12 @@ public class CLIApplication {
                     case "calculate":
                         handleCalculate(parts);
                         break;
+                    case "alerts":
+                        handleAlerts();
+                        break;
+                    case "clear_alerts":
+                        handleClearAlerts();
+                        break;
                     case "exit":
                         handleExit();
                         break;
@@ -80,12 +87,16 @@ public class CLIApplication {
 
     private void showPrompt() {
         if (financialService.isAuthenticated()) {
-            System.out.printf("[%s] > ", financialService.getCurrentUser().getLogin());
+            User user = financialService.getCurrentUser();
+            int unreadAlerts = user.getWallet().getUnreadAlertCount();
+            String alertIndicator = unreadAlerts > 0 ? " 📬" : "";
+            System.out.printf("[%s%s] > ", user.getLogin(), alertIndicator);
         } else {
             System.out.print("> ");
         }
     }
 
+    // Существующие методы обработки команд (без изменений)
     private void handleLogin(String[] parts) {
         if (parts.length < 3) {
             System.out.println("Использование: login [логин] [пароль]");
@@ -97,6 +108,8 @@ public class CLIApplication {
 
         if (authService.login(login, password)) {
             System.out.println("Успешный вход! Добро пожаловать, " + login);
+            // Показываем оповещения после входа
+            financialService.showUnreadAlertCount();
         } else {
             System.out.println("Ошибка: неверный логин или пароль");
         }
@@ -203,7 +216,6 @@ public class CLIApplication {
         financialService.showBudgetStatus();
     }
 
-    // Новая команда для подсчета по выбранным категориям
     private void handleCalculate(String[] parts) {
         if (!financialService.isAuthenticated()) {
             System.out.println("Ошибка: необходимо авторизоваться");
@@ -219,6 +231,15 @@ public class CLIApplication {
         System.arraycopy(parts, 1, categories, 0, categories.length);
 
         financialService.calculateSelectedCategories(categories);
+    }
+
+    // Новые методы для работы с оповещениями
+    private void handleAlerts() {
+        financialService.showAlerts();
+    }
+
+    private void handleClearAlerts() {
+        financialService.clearAlerts();
     }
 
     private void handleExit() {
@@ -237,6 +258,8 @@ public class CLIApplication {
         System.out.println("  stats - полная финансовая статистика");
         System.out.println("  budgets - статус бюджетов с индикаторами");
         System.out.println("  calculate [кат1] [кат2] ... - подсчет по выбранным категориям");
+        System.out.println("  alerts - просмотр всех оповещений");
+        System.out.println("  clear_alerts - очистка всех оповещений");
         System.out.println("  exit - выход из приложения");
         System.out.println("  help - показать эту справку");
     }
