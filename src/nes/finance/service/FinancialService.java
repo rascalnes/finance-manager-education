@@ -6,6 +6,7 @@ import nes.finance.model.TransactionType;
 import nes.finance.model.Wallet;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 public class FinancialService {
     private AuthService authService;
@@ -44,7 +45,6 @@ public class FinancialService {
 
         Transaction transaction = new Transaction(TransactionType.INCOME, amount, category);
         wallet.getTransactions().add(transaction);
-
         wallet.setBalance(wallet.getBalance() + amount);
 
         return true;
@@ -76,7 +76,6 @@ public class FinancialService {
 
         Transaction transaction = new Transaction(TransactionType.EXPENSE, amount, category);
         wallet.getTransactions().add(transaction);
-
         wallet.setBalance(wallet.getBalance() - amount);
 
         checkBudgetExceeded(category, amount);
@@ -112,28 +111,12 @@ public class FinancialService {
 
     public Double getBudget(String category) {
         if (!isAuthenticated()) return null;
-
-        User user = getCurrentUser();
-        return user.getWallet().getBudgets().get(category);
+        return getCurrentUser().getWallet().getBudgets().get(category);
     }
 
     public Map<String, Double> getAllBudgets() {
         if (!isAuthenticated()) return Map.of();
-
-        User user = getCurrentUser();
-        return user.getWallet().getBudgets();
-    }
-
-    // Метод для проверки превышения бюджета
-    private void checkBudgetExceeded(String category, double newExpense) {
-        Double budgetLimit = getBudget(category);
-        if (budgetLimit == null) return;
-
-        double currentExpenses = getExpenseByCategory(category);
-        if (currentExpenses > budgetLimit) {
-            System.out.printf("[ВНИМАНИЕ] Превышен бюджет для категории '%s'! Лимит: %.2f, Факт: %.2f%n",
-                    category, budgetLimit, currentExpenses);
-        }
+        return getCurrentUser().getWallet().getBudgets();
     }
 
     // Методы валидации
@@ -145,10 +128,173 @@ public class FinancialService {
         return category != null && !category.trim().isEmpty();
     }
 
-    // Методы для получения статистики
+    private void checkBudgetExceeded(String category, double newExpense) {
+        Double budgetLimit = getBudget(category);
+        if (budgetLimit == null) return;
+
+        double currentExpenses = getExpenseByCategory(category);
+        if (currentExpenses > budgetLimit) {
+            System.out.printf("[ВНИМАНИЕ] Превышен бюджет для категории '%s'! Лимит: %.2f, Факт: %.2f%n",
+                    category, budgetLimit, currentExpenses);
+        }
+    }
+
+    // Основной метод для вывода полной статистики
+    public void showFullStatistics() {
+        if (!isAuthenticated()) {
+            System.out.println("Ошибка: пользователь не авторизован");
+            return;
+        }
+
+        System.out.println("=== ФИНАНСОВАЯ СТАТИСТИКА ===");
+
+        // Общие доходы и расходы
+        double totalIncome = getTotalIncome();
+        double totalExpense = getTotalExpense();
+
+        System.out.printf("Общий доход: %,.1f%n", totalIncome);
+        System.out.printf("Общие расходы: %,.1f%n", totalExpense);
+        System.out.printf("Текущий баланс: %,.1f%n", getCurrentUser().getWallet().getBalance());
+        System.out.println();
+
+        // Доходы по категориям
+        showIncomeByCategories();
+        System.out.println();
+
+        // Расходы по категориям
+        showExpensesByCategories();
+        System.out.println();
+
+        // Статус бюджетов
+        showDetailedBudgetStatus();
+    }
+
+    // Доходы по категориям с форматированием
+    private void showIncomeByCategories() {
+        Map<String, Double> incomeByCategory = getIncomeByCategories();
+
+        if (incomeByCategory.isEmpty()) {
+            System.out.println("Доходы по категориям: нет данных");
+            return;
+        }
+
+        System.out.println("Доходы по категориям:");
+        incomeByCategory.entrySet().stream()
+                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                .forEach(entry ->
+                        System.out.printf("  - %s: %,.1f%n", entry.getKey(), entry.getValue()));
+    }
+
+    // Расходы по категориям с форматированием
+    private void showExpensesByCategories() {
+        Map<String, Double> expenseByCategory = getExpenseByCategories();
+
+        if (expenseByCategory.isEmpty()) {
+            System.out.println("Расходы по категориям: нет данных");
+            return;
+        }
+
+        System.out.println("Расходы по категориям:");
+        expenseByCategory.entrySet().stream()
+                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                .forEach(entry ->
+                        System.out.printf("  - %s: %,.1f%n", entry.getKey(), entry.getValue()));
+    }
+
+    // Детальный статус бюджетов
+    public void showDetailedBudgetStatus() {
+        Map<String, Double> budgets = getAllBudgets();
+        if (budgets.isEmpty()) {
+            System.out.println("Бюджеты по категориям: не установлены");
+            return;
+        }
+
+        System.out.println("Бюджет по категориям:");
+
+        // Сортировка бюджет по убыванию превышения лимита (сначала те, где превышен бюджет)
+        budgets.entrySet().stream()
+                .sorted((a, b) -> {
+                    double remainingA = a.getValue() - getExpenseByCategory(a.getKey());
+                    double remainingB = b.getValue() - getExpenseByCategory(b.getKey());
+                    return Double.compare(remainingA, remainingB); // Сначала отрицательные (превышенные)
+                })
+                .forEach(entry -> {
+                    String category = entry.getKey();
+                    double limit = entry.getValue();
+                    double expenses = getExpenseByCategory(category);
+                    double remaining = limit - expenses;
+
+                    System.out.printf("  - %s: %,.1f, Оставшийся бюджет: %,.1f%n",
+                            category, limit, remaining);
+                });
+    }
+
+    // Методы для получения агрегированных данных по категориям
+    public Map<String, Double> getIncomeByCategories() {
+        if (!isAuthenticated()) return Map.of();
+
+        return getCurrentUser().getWallet().getTransactions().stream()
+                .filter(t -> t.getType() == TransactionType.INCOME)
+                .collect(Collectors.groupingBy(
+                        Transaction::getCategory,
+                        Collectors.summingDouble(Transaction::getAmount)
+                ));
+    }
+
+    public Map<String, Double> getExpenseByCategories() {
+        if (!isAuthenticated()) return Map.of();
+
+        return getCurrentUser().getWallet().getTransactions().stream()
+                .filter(t -> t.getType() == TransactionType.EXPENSE)
+                .collect(Collectors.groupingBy(
+                        Transaction::getCategory,
+                        Collectors.summingDouble(Transaction::getAmount)
+                ));
+    }
+
+    // Метод для подсчета по нескольким выбранным категориям
+    public void calculateSelectedCategories(String[] categories) {
+        if (!isAuthenticated()) {
+            System.out.println("Ошибка: пользователь не авторизован");
+            return;
+        }
+
+        if (categories == null || categories.length == 0) {
+            System.out.println("Ошибка: не указаны категории для подсчета");
+            return;
+        }
+
+        System.out.println("Подсчет по выбранным категориям:");
+
+        double totalIncome = 0;
+        double totalExpense = 0;
+        boolean hasValidCategories = false;
+
+        for (String category : categories) {
+            double income = getIncomeByCategory(category);
+            double expense = getExpenseByCategory(category);
+
+            if (income > 0 || expense > 0) {
+                hasValidCategories = true;
+                totalIncome += income;
+                totalExpense += expense;
+
+                System.out.printf("  %s: доходы %,.1f, расходы %,.1f%n",
+                        category, income, expense);
+            } else {
+                System.out.printf("  Категория '%s' не найдена или нет операций%n", category);
+            }
+        }
+
+        if (hasValidCategories) {
+            System.out.printf("Итого по выбранным категориям: доходы %,.1f, расходы %,.1f%n",
+                    totalIncome, totalExpense);
+        }
+    }
+
+    // Методы для вывода статистки статистики
     public double getTotalIncome() {
         if (!isAuthenticated()) return 0;
-
         return getCurrentUser().getWallet().getTransactions().stream()
                 .filter(t -> t.getType() == TransactionType.INCOME)
                 .mapToDouble(Transaction::getAmount)
@@ -157,7 +303,6 @@ public class FinancialService {
 
     public double getTotalExpense() {
         if (!isAuthenticated()) return 0;
-
         return getCurrentUser().getWallet().getTransactions().stream()
                 .filter(t -> t.getType() == TransactionType.EXPENSE)
                 .mapToDouble(Transaction::getAmount)
@@ -166,7 +311,6 @@ public class FinancialService {
 
     public double getIncomeByCategory(String category) {
         if (!isAuthenticated()) return 0;
-
         return getCurrentUser().getWallet().getTransactions().stream()
                 .filter(t -> t.getType() == TransactionType.INCOME && t.getCategory().equals(category))
                 .mapToDouble(Transaction::getAmount)
@@ -175,14 +319,60 @@ public class FinancialService {
 
     public double getExpenseByCategory(String category) {
         if (!isAuthenticated()) return 0;
-
         return getCurrentUser().getWallet().getTransactions().stream()
                 .filter(t -> t.getType() == TransactionType.EXPENSE && t.getCategory().equals(category))
                 .mapToDouble(Transaction::getAmount)
                 .sum();
     }
 
-    // Метод для получения статуса бюджетов
+    public void showUserInfo() {
+        if (isAuthenticated()) {
+            User user = getCurrentUser();
+            Wallet wallet = user.getWallet();
+
+            System.out.printf("Пользователь: %s%n", user.getLogin());
+            System.out.printf("Баланс: %,.2f%n", wallet.getBalance());
+            System.out.printf("Общий доход: %,.2f%n", getTotalIncome());
+            System.out.printf("Общий расход: %,.2f%n", getTotalExpense());
+            System.out.printf("Кол-во транзакций: %d%n", wallet.getTransactions().size());
+            System.out.printf("Кол-во бюджетов: %d%n", wallet.getBudgets().size());
+
+            showRecentTransactions(5);
+        } else {
+            System.out.println("Пользователь не авторизован");
+        }
+    }
+
+    public void showCategoriesSummary() {
+        if (!isAuthenticated()) {
+            System.out.println("Ошибка: необходимо авторизоваться");
+            return;
+        }
+
+        showFullStatistics();
+    }
+
+    // Метод для показа недавних транзакций
+    private void showRecentTransactions(int count) {
+        User user = getCurrentUser();
+        List<Transaction> transactions = user.getWallet().getTransactions();
+
+        if (transactions.isEmpty()) {
+            System.out.println("Транзакций нет");
+            return;
+        }
+
+        System.out.println("Последние транзакции:");
+        int start = Math.max(0, transactions.size() - count);
+        for (int i = start; i < transactions.size(); i++) {
+            Transaction t = transactions.get(i);
+            String typeSymbol = t.getType() == TransactionType.INCOME ? "+" : "-";
+            System.out.printf("  %s %,.2f (%s) - %s%n",
+                    typeSymbol, t.getAmount(), t.getCategory(), t.getDate().toLocalDate());
+        }
+    }
+
+    // Метод для вывода статуса бюджетов
     public void showBudgetStatus() {
         if (!isAuthenticated()) {
             System.out.println("Ошибка: пользователь не авторизован");
@@ -202,87 +392,9 @@ public class FinancialService {
             double expenses = getExpenseByCategory(category);
             double remaining = limit - expenses;
 
-            System.out.printf("  %s: Лимит %.2f, Расходы %.2f, Осталось %.2f%n",
-                    category, limit, expenses, remaining);
-        }
-    }
-
-    public void showUserInfo() {
-        if (isAuthenticated()) {
-            User user = getCurrentUser();
-            Wallet wallet = user.getWallet();
-
-            System.out.printf("Пользователь: %s%n", user.getLogin());
-            System.out.printf("Баланс: %.2f%n", wallet.getBalance());
-            System.out.printf("Общий доход: %.2f%n", getTotalIncome());
-            System.out.printf("Общий расход: %.2f%n", getTotalExpense());
-            System.out.printf("Кол-во транзакций: %d%n", wallet.getTransactions().size());
-            System.out.printf("Кол-во бюджетов: %d%n", wallet.getBudgets().size());
-
-            // TODO Последние 5 транзакций
-            showRecentTransactions(5);
-        } else {
-            System.out.println("Пользователь не авторизован");
-        }
-    }
-
-    private void showRecentTransactions(int count) {
-        User user = getCurrentUser();
-        List<Transaction> transactions = user.getWallet().getTransactions();
-
-        if (transactions.isEmpty()) {
-            System.out.println("Транзакций нет");
-            return;
-        }
-
-        System.out.println("Последние транзакции:");
-        int start = Math.max(0, transactions.size() - count);
-        for (int i = start; i < transactions.size(); i++) {
-            Transaction t = transactions.get(i);
-            String typeSymbol = t.getType() == TransactionType.INCOME ? "+" : "-";
-            System.out.printf("  %s %.2f (%s) - %s%n",
-                    typeSymbol, t.getAmount(), t.getCategory(), t.getDate()); // TODO Формат даты
-        }
-    }
-
-    public void showCategoriesSummary() {
-        if (!isAuthenticated()) {
-            System.out.println("Ошибка: необходимо авторизоваться");
-            return;
-        }
-
-        User user = getCurrentUser();
-        Wallet wallet = user.getWallet();
-
-        Map<String, Double> incomeByCategory = new java.util.HashMap<>();
-        Map<String, Double> expenseByCategory = new java.util.HashMap<>();
-
-        for (Transaction t : wallet.getTransactions()) {
-            String category = t.getCategory();
-            double amount = t.getAmount();
-
-            if (t.getType() == TransactionType.INCOME) {
-                incomeByCategory.put(category, incomeByCategory.getOrDefault(category, 0.0) + amount);
-            } else {
-                expenseByCategory.put(category, expenseByCategory.getOrDefault(category, 0.0) + amount);
-            }
-        }
-
-        if (!incomeByCategory.isEmpty()) {
-            System.out.println("Доходы по категориям:");
-            incomeByCategory.forEach((category, total) ->
-                    System.out.printf("  %s: %.2f%n", category, total));
-        }
-
-        if (!expenseByCategory.isEmpty()) {
-            System.out.println("Расходы по категориям:");
-            expenseByCategory.forEach((category, total) ->
-                    System.out.printf("  %s: %.2f%n", category, total));
-        }
-
-        // Показываем статус бюджетов, если они есть
-        if (!wallet.getBudgets().isEmpty()) {
-            showBudgetStatus();
+            String status = remaining >= 0 ? "Норма" : "Превышен";
+            System.out.printf("  %s %s: Лимит %,.2f, Расходы %,.2f, Осталось %,.2f%n",
+                    status, category, limit, expenses, remaining);
         }
     }
 }

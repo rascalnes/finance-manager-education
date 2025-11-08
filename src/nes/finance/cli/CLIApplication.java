@@ -29,7 +29,7 @@ public class CLIApplication {
                 continue;
             }
 
-            String[] parts = input.split("\\s+", 3);
+            String[] parts = input.split("\\s+");
             String command = parts[0].toLowerCase();
 
             try {
@@ -57,6 +57,9 @@ public class CLIApplication {
                         break;
                     case "budgets":
                         handleBudgets();
+                        break;
+                    case "calculate":
+                        handleCalculate(parts);
                         break;
                     case "exit":
                         handleExit();
@@ -188,7 +191,7 @@ public class CLIApplication {
             return;
         }
 
-        financialService.showCategoriesSummary();
+        financialService.showFullStatistics();
     }
 
     private void handleBudgets() {
@@ -198,6 +201,24 @@ public class CLIApplication {
         }
 
         financialService.showBudgetStatus();
+    }
+
+    // Новая команда для подсчета по выбранным категориям
+    private void handleCalculate(String[] parts) {
+        if (!financialService.isAuthenticated()) {
+            System.out.println("Ошибка: необходимо авторизоваться");
+            return;
+        }
+
+        if (parts.length < 2) {
+            System.out.println("Использование: calculate [категория1] [категория2] ...");
+            return;
+        }
+
+        String[] categories = new String[parts.length - 1];
+        System.arraycopy(parts, 1, categories, 0, categories.length);
+
+        financialService.calculateSelectedCategories(categories);
     }
 
     private void handleExit() {
@@ -212,9 +233,10 @@ public class CLIApplication {
         System.out.println("  add_income [сумма] [категория] - добавить доход");
         System.out.println("  add_expense [сумма] [категория] - добавить расход");
         System.out.println("  set_budget [категория] [лимит] - установить бюджет для категории");
-        System.out.println("  info - информация о текущем пользователе и балансе");
-        System.out.println("  stats - статистика по категориям и бюджетам");
-        System.out.println("  budgets - статус бюджетов");
+        System.out.println("  info - краткая информация о пользователе");
+        System.out.println("  stats - полная финансовая статистика");
+        System.out.println("  budgets - статус бюджетов с индикаторами");
+        System.out.println("  calculate [кат1] [кат2] ... - подсчет по выбранным категориям");
         System.out.println("  exit - выход из приложения");
         System.out.println("  help - показать эту справку");
     }
