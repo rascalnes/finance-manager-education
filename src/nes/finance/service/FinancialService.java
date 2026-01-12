@@ -15,11 +15,13 @@ import java.util.stream.Collectors;
 
 public class FinancialService {
     private AuthService authService;
+    private DataService dataService;
     private static final double BUDGET_WARNING_THRESHOLD = 0.8; // 80% использования бюджета
     private static final double LOW_BALANCE_THRESHOLD = 1000.0; // Порог низкого баланса
 
     public FinancialService(AuthService authService) {
         this.authService = authService;
+        this.dataService = authService.getDataService();
     }
 
     public User getCurrentUser() {
@@ -30,11 +32,21 @@ public class FinancialService {
         return authService.isAuthenticated();
     }
 
+    /**
+     * Автоматическое сохранение данных пользователя
+     */
+    private void autoSave() {
+        if (isAuthenticated()) {
+            dataService.saveUserData(getCurrentUser());
+        }
+    }
+
     // Методы для работы с транзакциями с оповещениями
     public boolean addIncome(double amount, String category) {
         if (!isAuthenticated()) {
             System.out.println("Ошибка: пользователь не авторизован");
-            return false;
+            autoSave();
+            return true;
         }
 
         if (!isValidAmount(amount)) {
@@ -63,7 +75,8 @@ public class FinancialService {
     public boolean addExpense(double amount, String category) {
         if (!isAuthenticated()) {
             System.out.println("Ошибка: пользователь не авторизован");
-            return false;
+            autoSave();
+            return true;
         }
 
         if (!isValidAmount(amount)) {
@@ -282,7 +295,8 @@ public class FinancialService {
     public boolean setBudget(String category, double limit) {
         if (!isAuthenticated()) {
             System.out.println("Ошибка: пользователь не авторизован");
-            return false;
+            autoSave();
+            return true;
         }
 
         if (!isValidCategory(category)) {
@@ -514,6 +528,37 @@ public class FinancialService {
             String status = remaining >= 0 ? "✅" : "⚠️";
             System.out.printf("  %s %s: Лимит %,.2f, Расходы %,.2f, Осталось %,.2f%n",
                     status, category, limit, expenses, remaining);
+        }
+    }
+
+    /**
+     * Принудительное сохранение данных
+     */
+    public void saveData() {
+        if (isAuthenticated()) {
+            if (dataService.saveUserData(getCurrentUser())) {
+                System.out.println("Данные успешно сохранены");
+            } else {
+                System.out.println("Ошибка при сохранении данных");
+            }
+        } else {
+            System.out.println("Ошибка: пользователь не авторизован");
+        }
+    }
+
+    /**
+     * Создание резервной копии данных
+     */
+    public void createBackup() {
+        if (isAuthenticated()) {
+            String login = getCurrentUser().getLogin();
+            if (dataService.createBackup(login)) {
+                System.out.println("Резервная копия создана");
+            } else {
+                System.out.println("Ошибка при создании резервной копии");
+            }
+        } else {
+            System.out.println("Ошибка: пользователь не авторизован");
         }
     }
 }

@@ -1,6 +1,8 @@
 package nes.finance.model;
 
-public enum TransactionType {
+import java.io.Serializable;
+
+public enum TransactionType implements Serializable {
     INCOME,
     EXPENSE
 }

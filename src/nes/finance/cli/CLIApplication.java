@@ -20,7 +20,7 @@ public class CLIApplication {
 
     public void run() {
         System.out.println("=== Система управления личными финансами ===");
-        System.out.println("Доступные команды: login, register, add_income, add_expense, set_budget, info, stats, budgets, calculate, alerts, clear_alerts, exit");
+        System.out.println("Доступные команды: login, register, add_income, add_expense, set_budget, info, stats, budgets, calculate, alerts, clear_alerts, save, backup, delete_user, exit");
 
         while (isRunning) {
             showPrompt();
@@ -68,6 +68,15 @@ public class CLIApplication {
                     case "clear_alerts":
                         handleClearAlerts();
                         break;
+                    case "save":
+                        handleSave();
+                        break;
+                    case "backup":
+                        handleBackup();
+                        break;
+                    case "delete_user":
+                        handleDeleteUser(parts);
+                        break;
                     case "exit":
                         handleExit();
                         break;
@@ -79,6 +88,7 @@ public class CLIApplication {
                 }
             } catch (Exception e) {
                 System.out.println("Ошибка выполнения команды: " + e.getMessage());
+                e.printStackTrace();
             }
         }
 
@@ -242,7 +252,50 @@ public class CLIApplication {
         financialService.clearAlerts();
     }
 
+    // методы для работы с сохранением данных
+    private void handleSave() {
+        financialService.saveData();
+    }
+
+    private void handleBackup() {
+        financialService.createBackup();
+    }
+
+    private void handleDeleteUser(String[] parts) {
+        if (!financialService.isAuthenticated()) {
+            System.out.println("Ошибка: необходимо авторизоваться");
+            return;
+        }
+
+        if (parts.length < 2) {
+            System.out.println("Использование: delete_user [пароль]");
+            return;
+        }
+
+        String password = parts[1];
+        String currentLogin = financialService.getCurrentUser().getLogin();
+
+        System.out.print("Вы уверены, что хотите удалить пользователя " + currentLogin + "? (yes/no): ");
+        String confirmation = scanner.nextLine().trim().toLowerCase();
+
+        if (confirmation.equals("yes") || confirmation.equals("y")) {
+            if (authService.deleteUser(currentLogin, password)) {
+                System.out.println("Пользователь удален. Выход из системы...");
+                isRunning = false;
+            }
+        } else {
+            System.out.println("Удаление отменено");
+        }
+    }
+
     private void handleExit() {
+        // Сохраняем данные текущего пользователя перед выходом
+        if (financialService.isAuthenticated()) {
+            System.out.println("Сохранение данных...");
+            financialService.saveData();
+            authService.logout();
+        }
+
         System.out.println("Выход из приложения...");
         isRunning = false;
     }
@@ -260,7 +313,10 @@ public class CLIApplication {
         System.out.println("  calculate [кат1] [кат2] ... - подсчет по выбранным категориям");
         System.out.println("  alerts - просмотр всех оповещений");
         System.out.println("  clear_alerts - очистка всех оповещений");
-        System.out.println("  exit - выход из приложения");
+        System.out.println("  save - принудительное сохранение данных");
+        System.out.println("  backup - создание резервной копии данных");
+        System.out.println("  delete_user [пароль] - удаление пользователя");
+        System.out.println("  exit - выход из приложения с сохранением данных");
         System.out.println("  help - показать эту справку");
     }
 }

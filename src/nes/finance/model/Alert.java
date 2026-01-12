@@ -1,8 +1,11 @@
 package nes.finance.model;
 
 import java.time.LocalDateTime;
+import java.io.Serializable;
 
-public class Alert {
+public class Alert implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     private AlertType type;
     private String message;
     private LocalDateTime timestamp;
@@ -15,6 +18,15 @@ public class Alert {
         this.isRead = false;
     }
 
+    // Конструктор для загрузки из файла
+    public Alert(AlertType type, String message, LocalDateTime timestamp, boolean isRead) {
+        this.type = type;
+        this.message = message;
+        this.timestamp = timestamp;
+        this.isRead = isRead;
+    }
+
+    // Getters
     public AlertType getType() { return type; }
     public String getMessage() { return message; }
     public LocalDateTime getTimestamp() { return timestamp; }

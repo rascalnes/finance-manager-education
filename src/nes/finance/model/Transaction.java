@@ -1,8 +1,11 @@
 package nes.finance.model;
 
 import java.time.LocalDateTime;
+import java.io.Serializable;
 
-public class Transaction {
+public class Transaction implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     private TransactionType type;
     private double amount;
     private String category;
@@ -15,6 +18,15 @@ public class Transaction {
         this.date = LocalDateTime.now();
     }
 
+    // Конструктор для загрузки из файла
+    public Transaction(TransactionType type, double amount, String category, LocalDateTime date) {
+        this.type = type;
+        this.amount = amount;
+        this.category = category;
+        this.date = date;
+    }
+
+    // Getters
     public TransactionType getType() { return type; }
     public double getAmount() { return amount; }
     public String getCategory() { return category; }

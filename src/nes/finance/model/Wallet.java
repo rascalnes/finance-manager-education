@@ -1,27 +1,31 @@
 package nes.finance.model;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class Wallet {
+public class Wallet implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     private double balance;
     private List<Transaction> transactions;
-    private Map<String, Double> budgets; // category -> limit
-    private List<Alert> alerts; // Новое поле для оповещений
+    private Map<String, Double> budgets;
+    private List<Alert> alerts;
 
     public Wallet() {
         this.balance = 0.0;
         this.transactions = new ArrayList<>();
         this.budgets = new HashMap<>();
-        this.alerts = new ArrayList<>(); // Инициализация списка оповещений
+        this.alerts = new ArrayList<>();
     }
 
+    // Getters
     public double getBalance() { return balance; }
     public List<Transaction> getTransactions() { return transactions; }
     public Map<String, Double> getBudgets() { return budgets; }
-    public List<Alert> getAlerts() { return alerts; } // Новый геттер
+    public List<Alert> getAlerts() { return alerts; }
 
     public void setBalance(double balance) { this.balance = balance; }
 
