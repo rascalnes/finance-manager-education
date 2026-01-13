@@ -131,8 +131,8 @@ nes1 [Balance: 27000.00] > report month
 ### Экспорт данных
 
 nes1 [Balance: 27000.00] > export csv
-Транзакции экспортированы в файл: export_nes1_2024-01-15.csv
+Транзакции экспортированы в файл: export_nes1_2026-01-13.csv
 Количество записей: 2
 
 nes1 [Balance: 27000.00] > export json
-Данные экспортированы в JSON файл: export_nes1_2024-01-15.json
+Данные экспортированы в JSON файл: export_nes1_2026-01-13.json
