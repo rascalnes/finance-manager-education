@@ -1,26 +1,33 @@
 package nes.finance.cli;
 
-import nes.finance.model.User;
 import nes.finance.service.AuthService;
 import nes.finance.service.FinancialService;
+import nes.finance.service.ExportService;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.Scanner;
 
 public class CLIApplication {
     private AuthService authService;
     private FinancialService financialService;
+    private ExportService exportService;
     private Scanner scanner;
     private boolean isRunning;
+
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     public CLIApplication() {
         this.authService = new AuthService();
         this.financialService = new FinancialService(authService);
+        this.exportService = new ExportService();
         this.scanner = new Scanner(System.in);
         this.isRunning = true;
     }
 
     public void run() {
-        System.out.println("=== Система управления личными финансами ===");
-        System.out.println("Доступные команды: login, register, add_income, add_expense, set_budget, info, stats, budgets, calculate, alerts, clear_alerts, save, backup, delete_user, exit");
+        printWelcomeMessage();
+        printMainHelp();
 
         while (isRunning) {
             showPrompt();
@@ -30,229 +37,545 @@ public class CLIApplication {
                 continue;
             }
 
-            String[] parts = input.split("\\s+");
-            String command = parts[0].toLowerCase();
-
-            try {
-                switch (command) {
-                    case "login":
-                        handleLogin(parts);
-                        break;
-                    case "register":
-                        handleRegister(parts);
-                        break;
-                    case "add_income":
-                        handleAddIncome(parts);
-                        break;
-                    case "add_expense":
-                        handleAddExpense(parts);
-                        break;
-                    case "set_budget":
-                        handleSetBudget(parts);
-                        break;
-                    case "info":
-                        handleInfo();
-                        break;
-                    case "stats":
-                        handleStats();
-                        break;
-                    case "budgets":
-                        handleBudgets();
-                        break;
-                    case "calculate":
-                        handleCalculate(parts);
-                        break;
-                    case "alerts":
-                        handleAlerts();
-                        break;
-                    case "clear_alerts":
-                        handleClearAlerts();
-                        break;
-                    case "save":
-                        handleSave();
-                        break;
-                    case "backup":
-                        handleBackup();
-                        break;
-                    case "delete_user":
-                        handleDeleteUser(parts);
-                        break;
-                    case "exit":
-                        handleExit();
-                        break;
-                    case "help":
-                        showHelp();
-                        break;
-                    default:
-                        System.out.println("Неизвестная команда. Введите 'help' для списка команд.");
-                }
-            } catch (Exception e) {
-                System.out.println("Ошибка выполнения команды: " + e.getMessage());
-                e.printStackTrace();
-            }
+            processCommand(input);
         }
 
         scanner.close();
+        System.out.println("До свидания!");
+    }
+
+    private void printWelcomeMessage() {
+        System.out.println("=".repeat(60));
+        System.out.println("        СИСТЕМА УПРАВЛЕНИЯ ЛИЧНЫМИ ФИНАНСАМИ");
+        System.out.println("=".repeat(60));
+        System.out.println("Введите 'help' для списка команд или 'help [команда]' для справки");
+        System.out.println();
+    }
+
+    private void printMainHelp() {
+        System.out.println("ОСНОВНЫЕ КОМАНДЫ:");
+        System.out.println("  account    - Управление аккаунтом (регистрация, вход, выход)");
+        System.out.println("  money      - Работа с финансами (доходы, расходы)");
+        System.out.println("  budget     - Управление бюджетами");
+        System.out.println("  report     - Отчеты и статистика");
+        System.out.println("  category   - Управление категориями");
+        System.out.println("  export     - Экспорт данных");
+        System.out.println("  alert      - Оповещения и настройки");
+        System.out.println("  system     - Системные команды");
+        System.out.println();
+        System.out.println("Введите 'help [группа]' для подробной справки по группе команд");
     }
 
     private void showPrompt() {
         if (financialService.isAuthenticated()) {
-            User user = financialService.getCurrentUser();
-            int unreadAlerts = user.getWallet().getUnreadAlertCount();
-            String alertIndicator = unreadAlerts > 0 ? " 📬" : "";
-            System.out.printf("[%s%s] > ", user.getLogin(), alertIndicator);
+            String username = financialService.getCurrentUser().getLogin();
+            double balance = financialService.getCurrentUser().getWallet().getBalance();
+            int alerts = financialService.getCurrentUser().getWallet().getUnreadAlertCount();
+
+            String alertIndicator = alerts > 0 ? String.format(" [%d alerts]", alerts) : "";
+            System.out.printf("%s [Balance: %.2f]%s > ", username, balance, alertIndicator);
         } else {
-            System.out.print("> ");
+            System.out.print("finance > ");
         }
     }
 
-    // Существующие методы обработки команд (без изменений)
+    private void processCommand(String input) {
+        String[] parts = input.split("\\s+");
+        String command = parts[0].toLowerCase();
+
+        try {
+            switch (command) {
+                case "help":
+                    handleHelp(parts);
+                    break;
+                case "login":
+                    handleLogin(parts);
+                    break;
+                case "register":
+                case "reg":
+                    handleRegister(parts);
+                    break;
+                case "logout":
+                    handleLogout();
+                    break;
+                case "exit":
+                case "quit":
+                    handleExit();
+                    break;
+
+                // Команды работы с финансами
+                case "add":
+                    handleAdd(parts);
+                    break;
+                case "income":
+                    handleIncome(parts);
+                    break;
+                case "expense":
+                case "spend":
+                    handleExpense(parts);
+                    break;
+
+                // Команды работы с бюджетами
+                case "budget":
+                    handleBudget(parts);
+                    break;
+                case "budgets":
+                    handleBudgets();
+                    break;
+
+                // Команды отчетов
+                case "report":
+                case "stats":
+                    handleReport(parts);
+                    break;
+                case "summary":
+                    handleSummary();
+                    break;
+                case "period":
+                    handlePeriod(parts);
+                    break;
+
+                // Команды категорий
+                case "categories":
+                case "cats":
+                    handleCategories();
+                    break;
+                case "rename":
+                    handleRename(parts);
+                    break;
+                case "merge":
+                    handleMerge(parts);
+                    break;
+
+                // Команды экспорта
+                case "export":
+                    handleExport(parts);
+                    break;
+                case "import":
+                    handleImport(parts);
+                    break;
+
+                // Команды оповещений
+                case "alerts":
+                    handleAlerts();
+                    break;
+                case "check":
+                    handleCheckAlerts();
+                    break;
+
+                // Системные команды
+                case "save":
+                    handleSave();
+                    break;
+                case "backup":
+                    handleBackup();
+                    break;
+                case "clear":
+                    handleClear();
+                    break;
+
+                default:
+                    System.out.println("Неизвестная команда: " + command);
+                    System.out.println("Введите 'help' для списка доступных команд");
+            }
+        } catch (Exception e) {
+            System.out.println("Ошибка выполнения команды: " + e.getMessage());
+            System.out.println("Использование: " + getCommandUsage(command));
+        }
+    }
+
+    private void handleHelp(String[] parts) {
+        if (parts.length == 1) {
+            printMainHelp();
+        } else {
+            String topic = parts[1].toLowerCase();
+            printDetailedHelp(topic);
+        }
+    }
+
+    private void printDetailedHelp(String topic) {
+        System.out.println();
+        System.out.println("СПРАВКА: " + topic.toUpperCase());
+        System.out.println("-".repeat(60));
+
+        switch (topic) {
+            case "account":
+                System.out.println("Команды управления аккаунтом:");
+                System.out.println("  login <username> <password>     - Вход в систему");
+                System.out.println("  register <username> <password>  - Регистрация нового пользователя");
+                System.out.println("  logout                          - Выход из системы");
+                System.out.println("  exit                            - Выход из приложения");
+                break;
+
+            case "money":
+                System.out.println("Команды работы с финансами:");
+                System.out.println("  income <amount> <category>      - Добавить доход");
+                System.out.println("  expense <amount> <category>     - Добавить расход");
+                System.out.println("  add income <amount> <category>  - Альтернативный синтаксис");
+                System.out.println("  add expense <amount> <category> - Альтернативный синтаксис");
+                System.out.println("Пример: income 5000 Зарплата");
+                System.out.println("Пример: expense 1500 Продукты");
+                break;
+
+            case "budget":
+                System.out.println("Команды управления бюджетами:");
+                System.out.println("  budget set <category> <limit>   - Установить бюджет");
+                System.out.println("  budget edit <category> <limit>  - Изменить бюджет");
+                System.out.println("  budget remove <category>        - Удалить бюджет");
+                System.out.println("  budgets                         - Показать все бюджеты");
+                System.out.println("Пример: budget set Продукты 10000");
+                break;
+
+            case "report":
+                System.out.println("Команды отчетов и статистики:");
+                System.out.println("  report full                     - Полный отчет");
+                System.out.println("  report today                    - Отчет за сегодня");
+                System.out.println("  report week                     - Отчет за неделю");
+                System.out.println("  report month                    - Отчет за месяц");
+                System.out.println("  period <start> <end>            - Отчет за период");
+                System.out.println("  summary                         - Краткая сводка");
+                System.out.println("Формат даты: YYYY-MM-DD");
+                System.out.println("Пример: period 2024-01-01 2024-01-31");
+                break;
+
+            case "category":
+                System.out.println("Команды управления категориями:");
+                System.out.println("  categories                      - Список всех категорий");
+                System.out.println("  rename <old> <new>              - Переименовать категорию");
+                System.out.println("  merge <cat1> <cat2> ... <new>   - Объединить категории");
+                System.out.println("Пример: rename Еда Продукты");
+                System.out.println("Пример: merge Кафе Ресторан Развлечения Еда_вне_дома");
+                break;
+
+            case "export":
+                System.out.println("Команды экспорта данных:");
+                System.out.println("  export csv                      - Экспорт транзакций в CSV");
+                System.out.println("  export budgets                  - Экспорт бюджетов в CSV");
+                System.out.println("  export json                     - Экспорт всех данных в JSON");
+                System.out.println("  export report                   - Экспорт отчета в текстовый файл");
+                System.out.println("  import csv <file>               - Импорт транзакций из CSV");
+                break;
+
+            case "alert":
+                System.out.println("Команды оповещений:");
+                System.out.println("  alerts                          - Показать все оповещения");
+                System.out.println("  check                           - Проверить все условия для оповещений");
+                System.out.println("  clear alerts                    - Очистить все оповещения");
+                break;
+
+            case "system":
+                System.out.println("Системные команды:");
+                System.out.println("  save                            - Сохранить данные");
+                System.out.println("  backup                          - Создать резервную копию");
+                System.out.println("  clear                           - Очистить экран");
+                break;
+
+            default:
+                System.out.println("Раздел справки не найден: " + topic);
+                System.out.println("Доступные разделы: account, money, budget, report, category, export, alert, system");
+        }
+        System.out.println();
+    }
+
+    private String getCommandUsage(String command) {
+        switch (command) {
+            case "login": return "login <username> <password>";
+            case "register": return "register <username> <password>";
+            case "income": return "income <amount> <category>";
+            case "expense": return "expense <amount> <category>";
+            case "budget": return "budget set|edit|remove <category> [limit]";
+            case "period": return "period <start_date> <end_date>";
+            case "rename": return "rename <old_category> <new_category>";
+            case "merge": return "merge <cat1> <cat2> ... <new_category>";
+            case "export": return "export csv|budgets|json|report";
+            case "import": return "import csv <filename>";
+            default: return command;
+        }
+    }
+
+    // Реализация конкретных команд
     private void handleLogin(String[] parts) {
-        if (parts.length < 3) {
-            System.out.println("Использование: login [логин] [пароль]");
+        if (parts.length != 3) {
+            System.out.println("Использование: login <username> <password>");
             return;
         }
 
-        String login = parts[1];
-        String password = parts[2];
-
-        if (authService.login(login, password)) {
-            System.out.println("Успешный вход! Добро пожаловать, " + login);
-            // Показываем оповещения после входа
-            financialService.showUnreadAlertCount();
-        } else {
-            System.out.println("Ошибка: неверный логин или пароль");
+        if (authService.login(parts[1], parts[2])) {
+            financialService.checkAllAlerts();
         }
     }
 
     private void handleRegister(String[] parts) {
-        if (parts.length < 3) {
-            System.out.println("Использование: register [логин] [пароль]");
+        if (parts.length != 3) {
+            System.out.println("Использование: register <username> <password>");
             return;
         }
 
-        String login = parts[1];
-        String password = parts[2];
+        authService.register(parts[1], parts[2]);
+    }
 
-        if (authService.register(login, password)) {
-            System.out.println("Пользователь " + login + " успешно зарегистрирован");
+    private void handleLogout() {
+        if (authService.logout()) {
+            System.out.println("Вы вышли из системы");
         } else {
-            System.out.println("Ошибка: пользователь с таким логином уже существует");
+            System.out.println("Вы не авторизованы");
         }
     }
 
-    private void handleAddIncome(String[] parts) {
-        if (!financialService.isAuthenticated()) {
-            System.out.println("Ошибка: необходимо авторизоваться");
+    private void handleAdd(String[] parts) {
+        if (parts.length < 4) {
+            System.out.println("Использование: add <income|expense> <amount> <category>");
             return;
         }
 
-        if (parts.length < 3) {
-            System.out.println("Использование: add_income [сумма] [категория]");
-            return;
-        }
-
+        String type = parts[1];
         try {
-            double amount = Double.parseDouble(parts[1]);
-            String category = parts[2];
+            double amount = Double.parseDouble(parts[2]);
+            String category = parts[3];
 
-            financialService.addIncome(amount, category);
+            if (type.equalsIgnoreCase("income")) {
+                financialService.addIncome(amount, category);
+            } else if (type.equalsIgnoreCase("expense")) {
+                financialService.addExpense(amount, category);
+            } else {
+                System.out.println("Неизвестный тип операции: " + type);
+                System.out.println("Используйте: income или expense");
+            }
         } catch (NumberFormatException e) {
             System.out.println("Ошибка: сумма должна быть числом");
         }
     }
 
-    private void handleAddExpense(String[] parts) {
-        if (!financialService.isAuthenticated()) {
-            System.out.println("Ошибка: необходимо авторизоваться");
-            return;
-        }
-
+    private void handleIncome(String[] parts) {
         if (parts.length < 3) {
-            System.out.println("Использование: add_expense [сумма] [категория]");
+            System.out.println("Использование: income <amount> <category>");
             return;
         }
 
         try {
             double amount = Double.parseDouble(parts[1]);
-            String category = parts[2];
+            StringBuilder categoryBuilder = new StringBuilder();
+            for (int i = 2; i < parts.length; i++) {
+                categoryBuilder.append(parts[i]);
+                if (i < parts.length - 1) categoryBuilder.append(" ");
+            }
 
-            financialService.addExpense(amount, category);
+            financialService.addIncome(amount, categoryBuilder.toString());
         } catch (NumberFormatException e) {
             System.out.println("Ошибка: сумма должна быть числом");
         }
     }
 
-    private void handleSetBudget(String[] parts) {
-        if (!financialService.isAuthenticated()) {
-            System.out.println("Ошибка: необходимо авторизоваться");
-            return;
-        }
-
+    private void handleExpense(String[] parts) {
         if (parts.length < 3) {
-            System.out.println("Использование: set_budget [категория] [лимит]");
+            System.out.println("Использование: expense <amount> <category>");
             return;
         }
 
         try {
-            String category = parts[1];
-            double limit = Double.parseDouble(parts[2]);
+            double amount = Double.parseDouble(parts[1]);
+            StringBuilder categoryBuilder = new StringBuilder();
+            for (int i = 2; i < parts.length; i++) {
+                categoryBuilder.append(parts[i]);
+                if (i < parts.length - 1) categoryBuilder.append(" ");
+            }
 
-            financialService.setBudget(category, limit);
+            financialService.addExpense(amount, categoryBuilder.toString());
         } catch (NumberFormatException e) {
-            System.out.println("Ошибка: лимит должен быть числом");
+            System.out.println("Ошибка: сумма должна быть числом");
         }
     }
 
-    private void handleInfo() {
-        financialService.showUserInfo();
-    }
-
-    private void handleStats() {
-        if (!financialService.isAuthenticated()) {
-            System.out.println("Ошибка: необходимо авторизоваться");
+    private void handleBudget(String[] parts) {
+        if (parts.length < 3) {
+            System.out.println("Использование: budget <set|edit|remove> <category> [limit]");
             return;
         }
 
-        financialService.showFullStatistics();
+        String action = parts[1].toLowerCase();
+        String category = parts[2];
+
+        switch (action) {
+            case "set":
+                if (parts.length != 4) {
+                    System.out.println("Использование: budget set <category> <limit>");
+                    return;
+                }
+                try {
+                    double limit = Double.parseDouble(parts[3]);
+                    financialService.setBudget(category, limit);
+                } catch (NumberFormatException e) {
+                    System.out.println("Ошибка: лимит должен быть числом");
+                }
+                break;
+
+            case "edit":
+                if (parts.length != 4) {
+                    System.out.println("Использование: budget edit <category> <new_limit>");
+                    return;
+                }
+                try {
+                    double newLimit = Double.parseDouble(parts[3]);
+                    financialService.editBudget(category, newLimit);
+                } catch (NumberFormatException e) {
+                    System.out.println("Ошибка: новый лимит должен быть числом");
+                }
+                break;
+
+            case "remove":
+                financialService.removeBudget(category);
+                break;
+
+            default:
+                System.out.println("Неизвестное действие: " + action);
+                System.out.println("Используйте: set, edit или remove");
+        }
     }
 
     private void handleBudgets() {
-        if (!financialService.isAuthenticated()) {
-            System.out.println("Ошибка: необходимо авторизоваться");
-            return;
-        }
-
         financialService.showBudgetStatus();
     }
 
-    private void handleCalculate(String[] parts) {
+    private void handleReport(String[] parts) {
+        if (parts.length == 1) {
+            financialService.showFullStatistics();
+            return;
+        }
+
+        String period = parts[1].toLowerCase();
+        financialService.quickReport(period);
+    }
+
+    private void handleSummary() {
+        financialService.showUserInfo();
+    }
+
+    private void handlePeriod(String[] parts) {
+        if (parts.length != 3) {
+            System.out.println("Использование: period <start_date> <end_date>");
+            System.out.println("Формат даты: YYYY-MM-DD");
+            return;
+        }
+
+        try {
+            LocalDate startDate = LocalDate.parse(parts[1], DATE_FORMATTER);
+            LocalDate endDate = LocalDate.parse(parts[2], DATE_FORMATTER);
+
+            if (startDate.isAfter(endDate)) {
+                System.out.println("Ошибка: начальная дата не может быть позже конечной");
+                return;
+            }
+
+            financialService.calculateByPeriod(startDate, endDate);
+        } catch (DateTimeParseException e) {
+            System.out.println("Ошибка: неверный формат даты");
+            System.out.println("Используйте формат: YYYY-MM-DD");
+        }
+    }
+
+    private void handleCategories() {
+        financialService.listAllCategories();
+    }
+
+    private void handleRename(String[] parts) {
+        if (parts.length != 3) {
+            System.out.println("Использование: rename <old_category> <new_category>");
+            return;
+        }
+
+        financialService.renameCategory(parts[1], parts[2]);
+    }
+
+    private void handleMerge(String[] parts) {
+        if (parts.length < 4) {
+            System.out.println("Использование: merge <cat1> <cat2> ... <new_category>");
+            System.out.println("Минимум 2 категории для объединения");
+            return;
+        }
+
+        String[] categoriesToMerge = new String[parts.length - 2];
+        System.arraycopy(parts, 1, categoriesToMerge, 0, categoriesToMerge.length);
+        String newCategory = parts[parts.length - 1];
+
+        financialService.mergeCategories(categoriesToMerge, newCategory);
+    }
+
+    private void handleExport(String[] parts) {
         if (!financialService.isAuthenticated()) {
             System.out.println("Ошибка: необходимо авторизоваться");
             return;
         }
 
         if (parts.length < 2) {
-            System.out.println("Использование: calculate [категория1] [категория2] ...");
+            System.out.println("Использование: export <csv|budgets|json|report>");
             return;
         }
 
-        String[] categories = new String[parts.length - 1];
-        System.arraycopy(parts, 1, categories, 0, categories.length);
+        String type = parts[1].toLowerCase();
+        String filename = String.format("export_%s_%s.%s",
+                financialService.getCurrentUser().getLogin(),
+                LocalDate.now().toString(),
+                type.equals("json") ? "json" : "csv");
 
-        financialService.calculateSelectedCategories(categories);
+        switch (type) {
+            case "csv":
+                exportService.exportTransactionsToCSV(financialService.getCurrentUser(), filename);
+                break;
+            case "budgets":
+                exportService.exportBudgetsToCSV(financialService.getCurrentUser(), filename);
+                break;
+            case "json":
+                exportService.exportToJSON(financialService.getCurrentUser(), filename);
+                break;
+            case "report":
+                String reportFile = String.format("report_%s_%s.txt",
+                        financialService.getCurrentUser().getLogin(),
+                        LocalDate.now().toString());
+                exportService.exportReportToText(financialService.getCurrentUser(), reportFile);
+                break;
+            default:
+                System.out.println("Неизвестный тип экспорта: " + type);
+                System.out.println("Доступные типы: csv, budgets, json, report");
+        }
     }
 
-    // Новые методы для работы с оповещениями
+    private void handleImport(String[] parts) {
+        if (!financialService.isAuthenticated()) {
+            System.out.println("Ошибка: необходимо авторизоваться");
+            return;
+        }
+
+        if (parts.length < 3) {
+            System.out.println("Использование: import csv <filename>");
+            return;
+        }
+
+        String type = parts[1].toLowerCase();
+        String filename = parts[2];
+
+        if (type.equals("csv")) {
+            System.out.print("Вы уверены, что хотите импортировать транзакции из " + filename + "? (yes/no): ");
+            String confirmation = scanner.nextLine().trim().toLowerCase();
+
+            if (confirmation.equals("yes") || confirmation.equals("y")) {
+                exportService.importTransactionsFromCSV(financialService.getCurrentUser(), filename);
+            } else {
+                System.out.println("Импорт отменен");
+            }
+        } else {
+            System.out.println("Поддерживается только импорт из CSV файлов");
+        }
+    }
+
     private void handleAlerts() {
         financialService.showAlerts();
     }
 
-    private void handleClearAlerts() {
-        financialService.clearAlerts();
+    private void handleCheckAlerts() {
+        financialService.checkAllAlerts();
+        System.out.println("Проверка оповещений завершена");
     }
 
-    // методы для работы с сохранением данных
     private void handleSave() {
         financialService.saveData();
     }
@@ -261,35 +584,13 @@ public class CLIApplication {
         financialService.createBackup();
     }
 
-    private void handleDeleteUser(String[] parts) {
-        if (!financialService.isAuthenticated()) {
-            System.out.println("Ошибка: необходимо авторизоваться");
-            return;
-        }
-
-        if (parts.length < 2) {
-            System.out.println("Использование: delete_user [пароль]");
-            return;
-        }
-
-        String password = parts[1];
-        String currentLogin = financialService.getCurrentUser().getLogin();
-
-        System.out.print("Вы уверены, что хотите удалить пользователя " + currentLogin + "? (yes/no): ");
-        String confirmation = scanner.nextLine().trim().toLowerCase();
-
-        if (confirmation.equals("yes") || confirmation.equals("y")) {
-            if (authService.deleteUser(currentLogin, password)) {
-                System.out.println("Пользователь удален. Выход из системы...");
-                isRunning = false;
-            }
-        } else {
-            System.out.println("Удаление отменено");
-        }
+    private void handleClear() {
+        System.out.print("\033[H\033[2J");
+        System.out.flush();
     }
 
     private void handleExit() {
-        // Сохраняем данные текущего пользователя перед выходом
+        // Сохраняем данные перед выходом
         if (financialService.isAuthenticated()) {
             System.out.println("Сохранение данных...");
             financialService.saveData();
@@ -298,25 +599,5 @@ public class CLIApplication {
 
         System.out.println("Выход из приложения...");
         isRunning = false;
-    }
-
-    private void showHelp() {
-        System.out.println("Доступные команды:");
-        System.out.println("  login [логин] [пароль] - вход в систему");
-        System.out.println("  register [логин] [пароль] - регистрация нового пользователя");
-        System.out.println("  add_income [сумма] [категория] - добавить доход");
-        System.out.println("  add_expense [сумма] [категория] - добавить расход");
-        System.out.println("  set_budget [категория] [лимит] - установить бюджет для категории");
-        System.out.println("  info - краткая информация о пользователе");
-        System.out.println("  stats - полная финансовая статистика");
-        System.out.println("  budgets - статус бюджетов с индикаторами");
-        System.out.println("  calculate [кат1] [кат2] ... - подсчет по выбранным категориям");
-        System.out.println("  alerts - просмотр всех оповещений");
-        System.out.println("  clear_alerts - очистка всех оповещений");
-        System.out.println("  save - принудительное сохранение данных");
-        System.out.println("  backup - создание резервной копии данных");
-        System.out.println("  delete_user [пароль] - удаление пользователя");
-        System.out.println("  exit - выход из приложения с сохранением данных");
-        System.out.println("  help - показать эту справку");
     }
 }

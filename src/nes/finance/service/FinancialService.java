@@ -6,18 +6,22 @@ import nes.finance.model.TransactionType;
 import nes.finance.model.Wallet;
 import nes.finance.model.Alert;
 import nes.finance.model.AlertType;
-import java.util.List;
-import java.util.Map;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.Comparator;
+
+import java.util.*;
 import java.util.stream.Collectors;
+import java.time.LocalDate;
+import java.time.temporal.TemporalAdjusters;
 
 public class FinancialService {
     private AuthService authService;
     private DataService dataService;
     private static final double BUDGET_WARNING_THRESHOLD = 0.8; // 80% использования бюджета
     private static final double LOW_BALANCE_THRESHOLD = 1000.0; // Порог низкого баланса
+    private static final double BUDGET_WARNING_PERCENT = 80.0;
+    private static final double BUDGET_CRITICAL_PERCENT = 95.0;
+    private static final double LOW_BALANCE_WARNING = 2000.0;
+    private static final double LOW_BALANCE_CRITICAL = 500.0;
+    private static final double OVERSPENDING_THRESHOLD = 0.9;
 
     public FinancialService(AuthService authService) {
         this.authService = authService;
@@ -113,7 +117,481 @@ public class FinancialService {
         return true;
     }
 
-    // НОВЫЕ МЕТОДЫ ДЛЯ СИСТЕМЫ ОПОВЕЩЕНИЙ
+    /**
+     * Подсчет доходов и расходов за указанный период
+     */
+    public void calculateByPeriod(LocalDate startDate, LocalDate endDate) {
+        if (!isAuthenticated()) {
+            System.out.println("Ошибка: пользователь не авторизован");
+            return;
+        }
+
+        User user = getCurrentUser();
+        List<Transaction> transactions = user.getWallet().getTransactions();
+
+        // Фильтруем транзакции по периоду
+        List<Transaction> filteredTransactions = transactions.stream()
+                .filter(t -> {
+                    LocalDate transactionDate = t.getDate().toLocalDate();
+                    return !transactionDate.isBefore(startDate) && !transactionDate.isAfter(endDate);
+                })
+                .collect(Collectors.toList());
+
+        if (filteredTransactions.isEmpty()) {
+            System.out.printf("За период с %s по %s нет операций%n",
+                    startDate, endDate);
+            return;
+        }
+
+        double totalIncome = filteredTransactions.stream()
+                .filter(t -> t.getType() == TransactionType.INCOME)
+                .mapToDouble(Transaction::getAmount)
+                .sum();
+
+        double totalExpense = filteredTransactions.stream()
+                .filter(t -> t.getType() == TransactionType.EXPENSE)
+                .mapToDouble(Transaction::getAmount)
+                .sum();
+
+        System.out.printf("Отчет за период: %s - %s%n", startDate, endDate);
+        System.out.printf("Количество операций: %d%n", filteredTransactions.size());
+        System.out.printf("Общий доход: %,.2f%n", totalIncome);
+        System.out.printf("Общий расход: %,.2f%n", totalExpense);
+        System.out.printf("Баланс за период: %,.2f%n", totalIncome - totalExpense);
+
+        // Детали по категориям
+        System.out.println("\nДетализация по категориям:");
+
+        // Доходы по категориям
+        Map<String, Double> incomeByCategory = filteredTransactions.stream()
+                .filter(t -> t.getType() == TransactionType.INCOME)
+                .collect(Collectors.groupingBy(
+                        Transaction::getCategory,
+                        Collectors.summingDouble(Transaction::getAmount)
+                ));
+
+        if (!incomeByCategory.isEmpty()) {
+            System.out.println("Доходы:");
+            incomeByCategory.forEach((category, amount) ->
+                    System.out.printf("  %s: %,.2f%n", category, amount));
+        }
+
+        // Расходы по категориям
+        Map<String, Double> expenseByCategory = filteredTransactions.stream()
+                .filter(t -> t.getType() == TransactionType.EXPENSE)
+                .collect(Collectors.groupingBy(
+                        Transaction::getCategory,
+                        Collectors.summingDouble(Transaction::getAmount)
+                ));
+
+        if (!expenseByCategory.isEmpty()) {
+            System.out.println("\nРасходы:");
+            expenseByCategory.forEach((category, amount) ->
+                    System.out.printf("  %s: %,.2f%n", category, amount));
+        }
+    }
+
+    /**
+     * Подсчет по нескольким категориям с возможностью выбора типа операций
+     */
+    public void calculateByMultipleCategories(String[] categories, boolean incomesOnly, boolean expensesOnly) {
+        if (!isAuthenticated()) {
+            System.out.println("Ошибка: пользователь не авторизован");
+            return;
+        }
+
+        if (categories == null || categories.length == 0) {
+            System.out.println("Ошибка: не указаны категории для подсчета");
+            return;
+        }
+
+        System.out.println("Подсчет по выбранным категориям:");
+        System.out.println("--------------------------------");
+
+        double totalIncome = 0;
+        double totalExpense = 0;
+        List<String> foundCategories = new ArrayList<>();
+        List<String> notFoundCategories = new ArrayList<>();
+
+        for (String category : categories) {
+            double income = getIncomeByCategory(category);
+            double expense = getExpenseByCategory(category);
+
+            if (income > 0 || expense > 0) {
+                foundCategories.add(category);
+
+                if ((!incomesOnly && !expensesOnly) || incomesOnly) {
+                    System.out.printf("  %s: доходы %,.2f%n", category, income);
+                    totalIncome += income;
+                }
+
+                if ((!incomesOnly && !expensesOnly) || expensesOnly) {
+                    System.out.printf("  %s: расходы %,.2f%n", category, expense);
+                    totalExpense += expense;
+                }
+            } else {
+                notFoundCategories.add(category);
+            }
+        }
+
+        // Уведомления о ненайденных категориях
+        if (!notFoundCategories.isEmpty()) {
+            System.out.println("\nКатегории без операций:");
+            for (String category : notFoundCategories) {
+                System.out.println("  - " + category);
+            }
+        }
+
+        if (!foundCategories.isEmpty()) {
+            System.out.println("\nИтоги по найденным категориям:");
+            if ((!incomesOnly && !expensesOnly) || incomesOnly) {
+                System.out.printf("  Общий доход: %,.2f%n", totalIncome);
+            }
+            if ((!incomesOnly && !expensesOnly) || expensesOnly) {
+                System.out.printf("  Общий расход: %,.2f%n", totalExpense);
+            }
+            if (!incomesOnly && !expensesOnly) {
+                System.out.printf("  Чистый результат: %,.2f%n", totalIncome - totalExpense);
+            }
+        } else {
+            System.out.println("По указанным категориям не найдено операций");
+        }
+    }
+
+    /**
+     * Быстрые отчеты за стандартные периоды
+     */
+    public void quickReport(String periodType) {
+        LocalDate today = LocalDate.now();
+        LocalDate startDate;
+        LocalDate endDate = today;
+
+        switch (periodType.toLowerCase()) {
+            case "day":
+            case "today":
+                startDate = today;
+                break;
+            case "week":
+                startDate = today.minusDays(7);
+                break;
+            case "month":
+                startDate = today.withDayOfMonth(1);
+                endDate = today.with(TemporalAdjusters.lastDayOfMonth());
+                break;
+            case "year":
+                startDate = today.withDayOfYear(1);
+                endDate = today.with(TemporalAdjusters.lastDayOfYear());
+                break;
+            case "last_month":
+                startDate = today.minusMonths(1).withDayOfMonth(1);
+                endDate = today.minusMonths(1).with(TemporalAdjusters.lastDayOfMonth());
+                break;
+            default:
+                System.out.println("Неизвестный период. Используйте: day, week, month, year, last_month");
+                return;
+        }
+
+        calculateByPeriod(startDate, endDate);
+    }
+
+    // МЕТОДЫ ДЛЯ РЕДАКТИРОВАНИЯ БЮДЖЕТОВ И КАТЕГОРИЙ
+
+    /**
+     * Редактирование бюджета категории
+     */
+    public boolean editBudget(String category, double newLimit) {
+        if (!isAuthenticated()) {
+            System.out.println("Ошибка: пользователь не авторизован");
+            return false;
+        }
+
+        if (!isValidCategory(category)) {
+            System.out.println("Ошибка: категория не может быть пустой");
+            return false;
+        }
+
+        if (!isValidAmount(newLimit)) {
+            System.out.println("Ошибка: новый лимит должен быть положительным числом");
+            return false;
+        }
+
+        User user = getCurrentUser();
+        Wallet wallet = user.getWallet();
+
+        if (!wallet.getBudgets().containsKey(category)) {
+            System.out.println("Ошибка: бюджет для категории '" + category + "' не найден");
+            return false;
+        }
+
+        double oldLimit = wallet.getBudgets().get(category);
+        double currentExpenses = getExpenseByCategory(category);
+
+        // Проверяем, что новый лимит не меньше уже потраченной суммы
+        if (newLimit < currentExpenses) {
+            System.out.printf("Предупреждение: новый лимит (%.2f) меньше уже потраченной суммы (%.2f)%n",
+                    newLimit, currentExpenses);
+            System.out.print("Вы уверены, что хотите установить такой лимит? (yes/no): ");
+
+            try {
+                Scanner scanner = new Scanner(System.in);
+                String confirmation = scanner.nextLine().trim().toLowerCase();
+                if (!confirmation.equals("yes") && !confirmation.equals("y")) {
+                    System.out.println("Редактирование отменено");
+                    return false;
+                }
+            } catch (Exception e) {
+                System.out.println("Ошибка при чтении подтверждения");
+                return false;
+            }
+        }
+
+        wallet.getBudgets().put(category, newLimit);
+        System.out.printf("Бюджет для категории '%s' изменен: %.2f -> %.2f%n",
+                category, oldLimit, newLimit);
+
+        autoSave();
+        return true;
+    }
+
+    /**
+     * Удаление бюджета категории
+     */
+    public boolean removeBudget(String category) {
+        if (!isAuthenticated()) {
+            System.out.println("Ошибка: пользователь не авторизован");
+            return false;
+        }
+
+        User user = getCurrentUser();
+        Wallet wallet = user.getWallet();
+
+        if (!wallet.getBudgets().containsKey(category)) {
+            System.out.println("Ошибка: бюджет для категории '" + category + "' не найден");
+            return false;
+        }
+
+        Double removedLimit = wallet.getBudgets().remove(category);
+        System.out.printf("Бюджет для категории '%s' удален (лимит: %.2f)%n",
+                category, removedLimit);
+
+        autoSave();
+        return true;
+    }
+
+    /**
+     * Переименование категории во всех транзакциях и бюджетах
+     */
+    public boolean renameCategory(String oldCategory, String newCategory) {
+        if (!isAuthenticated()) {
+            System.out.println("Ошибка: пользователь не авторизован");
+            return false;
+        }
+
+        if (!isValidCategory(oldCategory) || !isValidCategory(newCategory)) {
+            System.out.println("Ошибка: категории не могут быть пустыми");
+            return false;
+        }
+
+        if (oldCategory.equals(newCategory)) {
+            System.out.println("Ошибка: новая категория совпадает со старой");
+            return false;
+        }
+
+        User user = getCurrentUser();
+        Wallet wallet = user.getWallet();
+
+        // Проверяем, существует ли старая категория в транзакциях или бюджетах
+        boolean hasTransactions = wallet.getTransactions().stream()
+                .anyMatch(t -> t.getCategory().equals(oldCategory));
+        boolean hasBudget = wallet.getBudgets().containsKey(oldCategory);
+
+        if (!hasTransactions && !hasBudget) {
+            System.out.println("Ошибка: категория '" + oldCategory + "' не найдена");
+            return false;
+        }
+
+        // Переименовываем в транзакциях
+        int renamedTransactions = 0;
+        for (Transaction t : wallet.getTransactions()) {
+            if (t.getCategory().equals(oldCategory)) {
+                // Используем рефлексию для изменения категории (т.к. поле final)
+                try {
+                    java.lang.reflect.Field categoryField = Transaction.class.getDeclaredField("category");
+                    categoryField.setAccessible(true);
+                    categoryField.set(t, newCategory);
+                    renamedTransactions++;
+                } catch (Exception e) {
+                    System.err.println("Ошибка при переименовании транзакции: " + e.getMessage());
+                }
+            }
+        }
+
+        // Переименовываем в бюджетах
+        Double budgetLimit = wallet.getBudgets().remove(oldCategory);
+        if (budgetLimit != null) {
+            wallet.getBudgets().put(newCategory, budgetLimit);
+        }
+
+        System.out.printf("Категория переименована: '%s' -> '%s'%n", oldCategory, newCategory);
+        System.out.printf("  Переименовано транзакций: %d%n", renamedTransactions);
+        System.out.printf("  Перенесен бюджет: %s%n",
+                budgetLimit != null ? String.format("%.2f", budgetLimit) : "нет");
+
+        autoSave();
+        return true;
+    }
+
+    /**
+     * Объединение нескольких категорий в одну
+     */
+    public boolean mergeCategories(String[] categoriesToMerge, String newCategory) {
+        if (!isAuthenticated()) {
+            System.out.println("Ошибка: пользователь не авторизован");
+            return false;
+        }
+
+        if (!isValidCategory(newCategory)) {
+            System.out.println("Ошибка: новая категория не может быть пустой");
+            return false;
+        }
+
+        if (categoriesToMerge == null || categoriesToMerge.length < 2) {
+            System.out.println("Ошибка: необходимо указать минимум 2 категории для объединения");
+            return false;
+        }
+
+        User user = getCurrentUser();
+        Wallet wallet = user.getWallet();
+
+        // Проверяем, что все категории для объединения существуют
+        List<String> existingCategories = new ArrayList<>();
+        List<String> nonExistingCategories = new ArrayList<>();
+
+        for (String category : categoriesToMerge) {
+            boolean exists = wallet.getTransactions().stream()
+                    .anyMatch(t -> t.getCategory().equals(category)) ||
+                    wallet.getBudgets().containsKey(category);
+
+            if (exists) {
+                existingCategories.add(category);
+            } else {
+                nonExistingCategories.add(category);
+            }
+        }
+
+        if (existingCategories.isEmpty()) {
+            System.out.println("Ошибка: ни одна из указанных категорий не найдена");
+            return false;
+        }
+
+        if (!nonExistingCategories.isEmpty()) {
+            System.out.println("Предупреждение: следующие категории не найдены и будут проигнорированы:");
+            for (String category : nonExistingCategories) {
+                System.out.println("  - " + category);
+            }
+        }
+
+        // Подсчитываем итоги по объединяемым категориям
+        double totalIncome = 0;
+        double totalExpense = 0;
+        double totalBudget = 0;
+        int totalTransactions = 0;
+
+        for (String category : existingCategories) {
+            totalIncome += getIncomeByCategory(category);
+            totalExpense += getExpenseByCategory(category);
+            totalTransactions += (int) wallet.getTransactions().stream()
+                    .filter(t -> t.getCategory().equals(category))
+                    .count();
+
+            Double budget = wallet.getBudgets().remove(category);
+            if (budget != null) {
+                totalBudget += budget;
+            }
+        }
+
+        // Объединяем транзакции
+        for (Transaction t : wallet.getTransactions()) {
+            if (existingCategories.contains(t.getCategory())) {
+                try {
+                    java.lang.reflect.Field categoryField = Transaction.class.getDeclaredField("category");
+                    categoryField.setAccessible(true);
+                    categoryField.set(t, newCategory);
+                } catch (Exception e) {
+                    System.err.println("Ошибка при объединении транзакции: " + e.getMessage());
+                }
+            }
+        }
+
+        // Устанавливаем объединенный бюджет
+        if (totalBudget > 0) {
+            wallet.getBudgets().put(newCategory, totalBudget);
+        }
+
+        System.out.println("Категории успешно объединены:");
+        System.out.printf("  Новая категория: '%s'%n", newCategory);
+        System.out.printf("  Объединено категорий: %d%n", existingCategories.size());
+        System.out.printf("  Объединено транзакций: %d%n", totalTransactions);
+        System.out.printf("  Общий доход: %.2f%n", totalIncome);
+        System.out.printf("  Общий расход: %.2f%n", totalExpense);
+        if (totalBudget > 0) {
+            System.out.printf("  Объединенный бюджет: %.2f%n", totalBudget);
+        }
+
+        autoSave();
+        return true;
+    }
+
+    /**
+     * Просмотр всех категорий со статистикой
+     */
+    public void listAllCategories() {
+        if (!isAuthenticated()) {
+            System.out.println("Ошибка: пользователь не авторизован");
+            return;
+        }
+
+        User user = getCurrentUser();
+        Wallet wallet = user.getWallet();
+
+        // Получаем все уникальные категории из транзакций
+        Set<String> categories = wallet.getTransactions().stream()
+                .map(Transaction::getCategory)
+                .collect(Collectors.toSet());
+
+        // Добавляем категории из бюджетов
+        categories.addAll(wallet.getBudgets().keySet());
+
+        if (categories.isEmpty()) {
+            System.out.println("Категории не найдены");
+            return;
+        }
+
+        System.out.println("Список всех категорий:");
+        System.out.println("----------------------");
+
+        List<String> sortedCategories = new ArrayList<>(categories);
+        Collections.sort(sortedCategories);
+
+        for (String category : sortedCategories) {
+            double income = getIncomeByCategory(category);
+            double expense = getExpenseByCategory(category);
+            Double budget = wallet.getBudgets().get(category);
+
+            System.out.printf("%s:%n", category);
+            if (income > 0) {
+                System.out.printf("  Доходы: %,.2f%n", income);
+            }
+            if (expense > 0) {
+                System.out.printf("  Расходы: %,.2f%n", expense);
+            }
+            if (budget != null) {
+                double remaining = budget - expense;
+                System.out.printf("  Бюджет: %,.2f (осталось: %,.2f)%n", budget, remaining);
+            }
+            System.out.println();
+        }
+    }
 
     // Создание оповещения
     private void createAlert(AlertType type, String message) {
@@ -127,6 +605,205 @@ public class FinancialService {
         if (type == AlertType.BUDGET_EXCEEDED || type == AlertType.OVERSPENDING) {
             System.out.printf("🚨 ОПОВЕЩЕНИЕ: %s%n", message);
         }
+    }
+
+    /**
+     * Проверка всех условий для оповещений
+     */
+    public void checkAllAlerts() {
+        if (!isAuthenticated()) return;
+
+        checkBudgetAlerts();
+        checkBalanceAlerts();
+        checkOverspendingAlert();
+        checkIncomeAlert();
+        checkZeroBalanceAlert();
+        checkLargeTransactionAlert();
+    }
+
+    /**
+     * Проверка оповещений по бюджетам
+     */
+    private void checkBudgetAlerts() {
+        User user = getCurrentUser();
+        Wallet wallet = user.getWallet();
+
+        for (Map.Entry<String, Double> entry : wallet.getBudgets().entrySet()) {
+            String category = entry.getKey();
+            double limit = entry.getValue();
+            double expenses = getExpenseByCategory(category);
+
+            if (limit > 0) {
+                double usagePercent = (expenses / limit) * 100;
+
+                // Предупреждение при 80% использования
+                if (usagePercent >= BUDGET_WARNING_PERCENT && usagePercent < 100) {
+                    double remaining = limit - expenses;
+                    if (!hasRecentAlert(category + "_warning")) {
+                        createAlert(AlertType.BUDGET_WARNING,
+                                String.format("Категория '%s': использовано %.1f%% бюджета. Осталось: %.2f",
+                                        category, usagePercent, remaining));
+                    }
+                }
+
+                // Критическое предупреждение при 95% использования
+                if (usagePercent >= BUDGET_CRITICAL_PERCENT && usagePercent < 100) {
+                    double remaining = limit - expenses;
+                    if (!hasRecentAlert(category + "_critical")) {
+                        createAlert(AlertType.BUDGET_EXCEEDED,
+                                String.format("КРИТИЧЕСКИЙ УРОВЕНЬ! Категория '%s': использовано %.1f%% бюджета. Осталось всего: %.2f",
+                                        category, usagePercent, remaining));
+                    }
+                }
+
+                // Превышение бюджета
+                if (expenses > limit) {
+                    double exceededBy = expenses - limit;
+                    if (!hasRecentAlert(category + "_exceeded")) {
+                        createAlert(AlertType.BUDGET_EXCEEDED,
+                                String.format("ПРЕВЫШЕН БЮДЖЕТ! Категория '%s': превышение на %.2f. Лимит: %.2f, Факт: %.2f",
+                                        category, exceededBy, limit, expenses));
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Проверка оповещений по балансу
+     */
+    private void checkBalanceAlerts() {
+        double balance = getCurrentUser().getWallet().getBalance();
+
+        // Низкий баланс - предупреждение
+        if (balance > 0 && balance <= LOW_BALANCE_WARNING && balance > LOW_BALANCE_CRITICAL) {
+            if (!hasRecentAlert("low_balance_warning")) {
+                createAlert(AlertType.LOW_BALANCE,
+                        String.format("Низкий баланс: %.2f. Рекомендуется пополнить счет.", balance));
+            }
+        }
+
+        // Критически низкий баланс
+        if (balance > 0 && balance <= LOW_BALANCE_CRITICAL) {
+            if (!hasRecentAlert("low_balance_critical")) {
+                createAlert(AlertType.LOW_BALANCE,
+                        String.format("КРИТИЧЕСКИ НИЗКИЙ БАЛАНС: %.2f. Срочно пополните счет!", balance));
+            }
+        }
+    }
+
+    /**
+     * Проверка на перерасход (расходы близки к доходам)
+     */
+    private void checkOverspendingAlert() {
+        double totalIncome = getTotalIncome();
+        double totalExpense = getTotalExpense();
+
+        if (totalIncome > 0) {
+            double expenseRatio = totalExpense / totalIncome;
+
+            if (expenseRatio >= OVERSPENDING_THRESHOLD && expenseRatio < 1.0) {
+                if (!hasRecentAlert("overspending_warning")) {
+                    createAlert(AlertType.OVERSPENDING,
+                            String.format("ВНИМАНИЕ: расходы составляют %.1f%% от доходов (%.2f из %.2f).",
+                                    expenseRatio * 100, totalExpense, totalIncome));
+                }
+            }
+
+            if (totalExpense > totalIncome) {
+                double deficit = totalExpense - totalIncome;
+                if (!hasRecentAlert("overspending_critical")) {
+                    createAlert(AlertType.OVERSPENDING,
+                            String.format("КРИТИЧЕСКИЙ ПЕРЕРАСХОД! Расходы превысили доходы на %.2f.", deficit));
+                }
+            }
+        }
+    }
+
+    /**
+     * Проверка на отсутствие доходов
+     */
+    private void checkIncomeAlert() {
+        double totalIncome = getTotalIncome();
+
+        if (totalIncome == 0 && getCurrentUser().getWallet().getTransactions().size() > 0) {
+            if (!hasRecentAlert("no_income")) {
+                createAlert(AlertType.BUDGET_WARNING,
+                        "У вас еще нет зарегистрированных доходов. Добавьте доходы для полноценного учета.");
+            }
+        }
+    }
+
+    /**
+     * Проверка нулевого баланса
+     */
+    private void checkZeroBalanceAlert() {
+        double balance = getCurrentUser().getWallet().getBalance();
+
+        if (balance == 0 && getCurrentUser().getWallet().getTransactions().size() > 0) {
+            if (!hasRecentAlert("zero_balance")) {
+                createAlert(AlertType.LOW_BALANCE,
+                        "Баланс равен нулю. Рассмотрите возможность пополнения счета.");
+            }
+        }
+    }
+
+    /**
+     * Проверка на крупные транзакции
+     */
+    private void checkLargeTransactionAlert() {
+        User user = getCurrentUser();
+        List<Transaction> transactions = user.getWallet().getTransactions();
+
+        if (transactions.isEmpty()) return;
+
+        // Получаем последнюю транзакцию
+        Transaction lastTransaction = transactions.get(transactions.size() - 1);
+
+        // Проверяем, является ли транзакция крупной (более 10000)
+        if (lastTransaction.getAmount() > 10000) {
+            String alertKey = "large_transaction_" + lastTransaction.getCategory();
+            if (!hasRecentAlert(alertKey)) {
+                createAlert(AlertType.BUDGET_WARNING,
+                        String.format("Крупная операция: %.2f в категории '%s'. Проверьте корректность.",
+                                lastTransaction.getAmount(), lastTransaction.getCategory()));
+            }
+        }
+    }
+
+    /**
+     * Проверка, было ли недавнее оповещение с таким ключом
+     */
+    private boolean hasRecentAlert(String alertKey) {
+        User user = getCurrentUser();
+        List<Alert> alerts = user.getWallet().getAlerts();
+
+        if (alerts.isEmpty()) return false;
+
+        // Проверяем последние 10 оповещений
+        int start = Math.max(0, alerts.size() - 10);
+        for (int i = start; i < alerts.size(); i++) {
+            Alert alert = alerts.get(i);
+            // Используем часть сообщения как ключ для проверки
+            if (alert.getMessage().contains(alertKey)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Настройка параметров оповещений
+     */
+    public void configureAlerts(double warningPercent, double criticalPercent,
+                                double lowBalanceWarning, double lowBalanceCritical) {
+        // Эти параметры можно сделать настраиваемыми
+        System.out.println("Настройки оповещений обновлены:");
+        System.out.printf("  Предупреждение о бюджете: %.0f%%%n", warningPercent);
+        System.out.printf("  Критический уровень бюджета: %.0f%%%n", criticalPercent);
+        System.out.printf("  Низкий баланс (предупреждение): %.2f%n", lowBalanceWarning);
+        System.out.printf("  Низкий баланс (критический): %.2f%n", lowBalanceCritical);
     }
 
     // Проверка превышения бюджета с улучшенной логикой

@@ -12,8 +12,12 @@ public class Main {
 
             app.run();
         } catch (Exception e) {
-            System.err.println("Критическая ошибка: " + e.getMessage());
+            System.err.println("Критическая ошибка в приложении: " + e.getMessage());
             e.printStackTrace();
+            System.out.println("\nДля получения помощи:");
+            System.out.println("  Проверьте, что все файлы скомпилированы правильно");
+            System.out.println("  Убедитесь, что есть права на запись в директорию data/");
+            System.out.println("  Попробуйте удалить поврежденные файлы в директории data/");
         }
     }
 }
